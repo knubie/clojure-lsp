@@ -1,5 +1,6 @@
 (ns clojure-lsp.feature.diagnostics
   (:require
+   [clojure-lsp.crawler :as crawler]
    [clojure-lsp.db :as db]
    [clojure-lsp.queries :as q]
    [clojure-lsp.shared :as shared]
@@ -98,8 +99,8 @@
       (not (= :off (get-in settings [:linters :clj-kondo :level])))
       (concat (kondo-findings->diagnostics filename (:findings db)))
 
-      (not (= :off (get-in settings [:linters :unused-public-var :level])))
-      (concat (lint-public-vars filename (:analysis db) settings)))))
+      #_(not (= :off (get-in settings [:linters :unused-public-var :level])))
+      #_(concat (lint-public-vars filename (:analysis db) settings)))))
 
 (defn sync-lint-file [uri db]
   (async/put! db/diagnostics-chan
@@ -111,3 +112,24 @@
     (async/put! db/diagnostics-chan
                 {:uri uri
                  :diagnostics (find-diagnostics uri db)})))
+
+(def basd 2)
+
+(defn unused-public-var-lint-from-kondo!
+  [{:keys [analysis reg-finding!]}]
+  (let [filename (-> analysis :var-definitions first :filename)
+        new-analysis (crawler/normalize-analysis analysis)
+        #__ #_(swap! db/db assoc-in [:analysis filename] new-analysis)
+        #_elements #_(->> (q/find-var-definitions (:analysis @db/db) filename false)
+                      (filter (comp #(= (count %) 0)
+                                   #(q/find-references (:analysis @db/db) % false))))]
+    (swap! db/db assoc-in [:analysis filename] new-analysis)
+    (log/info "---> updated analysis")
+    #_(doseq [element elements]
+      (reg-finding! {:filename (:filename element)
+                     :row (:name-row element)
+                     :col (:name-col element)
+                     :end-row (:name-end-row element)
+                     :end-col (:name-end-col element)
+                     :message (format "Unused public var '%s/%s'" (:ns element) (:name element))
+                     :type :unused-private-var}))))
